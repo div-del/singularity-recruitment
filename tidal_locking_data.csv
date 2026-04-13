@@ -1,0 +1,143 @@
+"""
+Moderate Q1: Tidal locking — angular velocity evolution under tidal torque
+Using NumPy for calculations, Pandas for storage, Matplotlib for plots
+"""
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
+# ============================================================
+# PHYSICAL MODEL
+# The tidal torque on a satellite causes its spin to evolve as:
+#   dω/dt = -k * (ω - n)
+# where:
+#   ω  = spin angular velocity of satellite (rad/s)
+#   n  = mean orbital angular velocity (rad/s)  ← the locked state
+#   k  = tidal dissipation constant (1/s)
+#
+# This gives: ω(t) = n + (ω₀ - n) * exp(-k * t)
+# Tidal locking is approached exponentially; we define "locked"
+# when |ω(t) - n| / |ω₀ - n| < 0.01  (within 1% of synchronous)
+# => t_lock = ln(100) / k
+# ============================================================
+
+# --- Parameters (representative of Moon-Earth system) ---
+# Orbital period of Moon ~ 27.3 days
+T_orbit    = 27.3 * 86400          # s
+n          = 2 * np.pi / T_orbit   # mean motion (rad/s)
+
+# Initial spin: Moon originally rotated ~3× faster than today
+omega0     = 3.0 * n               # rad/s
+
+# Tidal dissipation constant k
+# For Moon: tidal locking timescale ~ a few hundred Myr
+# k ~ 1/timescale
+t_lock_target = 500e6 * 365.25 * 86400  # 500 Myr in seconds
+k = np.log(100) / t_lock_target         # derived k
+
+print(f"Mean orbital angular velocity  n  = {n:.4e} rad/s")
+print(f"Initial spin angular velocity ω₀  = {omega0:.4e} rad/s")
+print(f"Tidal constant               k    = {k:.4e} s⁻¹")
+
+# --- Time array: 0 to 1 Gyr ---
+t_end    = 1e9 * 365.25 * 86400   # 1 Gyr in seconds
+N        = 5000
+t_array  = np.linspace(0, t_end, N)
+
+# --- Analytical solution ---
+omega = n + (omega0 - n) * np.exp(-k * t_array)
+
+# --- Torque: τ ∝ dω/dt ∝ -(ω - n) ---
+torque = -k * (omega - n)   # proportional (normalized units)
+
+# --- Tidal locking time (1% criterion) ---
+t_lock = np.log(100) / k
+print(f"\nTidal locking time (1% criterion): {t_lock/1e6/365.25/86400:.1f} Myr")
+print(f"  = {t_lock/1e9/365.25/86400:.3f} Gyr")
+
+# --- Store in Pandas DataFrame ---
+t_myr    = t_array / (1e6 * 365.25 * 86400)
+df = pd.DataFrame({
+    'time_Myr'         : t_myr,
+    'omega_rad_s'      : omega,
+    'omega_norm'       : omega / n,          # normalized to orbital rate
+    'torque_norm'      : torque / torque[0], # normalized
+    'delta_omega_norm' : (omega - n) / (omega0 - n)
+})
+df.to_csv('/home/claude/tidal_locking_data.csv', index=False)
+print(f"\nDataFrame shape: {df.shape}")
+print(df.head(10).to_string(index=False))
+
+# ============================================================
+# PLOTTING
+# ============================================================
+fig = plt.figure(figsize=(14, 9), facecolor='#080c14')
+gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.42, wspace=0.35)
+
+DARK  = '#080c14'
+MID   = '#111828'
+BLUE  = '#4FC3F7'
+AMBER = '#FFB74D'
+GREEN = '#81C784'
+RED   = '#EF9A9A'
+
+def style_ax(ax, title):
+    ax.set_facecolor(MID)
+    ax.set_title(title, color='white', fontsize=11, pad=8)
+    ax.tick_params(colors='#99aabb', labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_edgecolor('#223344')
+    ax.grid(alpha=0.15, color='#334')
+
+# --- Panel 1: ω vs time ---
+ax1 = fig.add_subplot(gs[0, :])
+style_ax(ax1, 'Angular Velocity of Satellite vs Time (Tidal Evolution)')
+
+ax1.plot(df.time_Myr, df.omega_norm, color=BLUE, linewidth=2, label='ω(t) / n')
+ax1.axhline(1.0, color=GREEN, linewidth=1.5, linestyle='--', label='Synchronous lock (ω = n)')
+ax1.axvline(t_lock / (1e6*365.25*86400), color=AMBER, linewidth=1.5,
+            linestyle=':', label=f'Lock time ≈ {t_lock/1e6/365.25/86400:.0f} Myr')
+
+# Shade the "locked" region
+ax1.axvspan(t_lock / (1e6*365.25*86400), t_myr[-1], alpha=0.08, color=GREEN)
+ax1.fill_between(df.time_Myr, df.omega_norm, 1.0,
+                 where=(df.omega_norm > 1.0), alpha=0.12, color=BLUE)
+
+ax1.set_xlabel('Time (Myr)', color='#aabbcc', fontsize=10)
+ax1.set_ylabel('ω / n  (normalized to orbital rate)', color='#aabbcc', fontsize=10)
+ax1.legend(facecolor='#0f1a28', edgecolor='#334', labelcolor='white', fontsize=9)
+ax1.set_xlim(0, t_myr[-1])
+
+# --- Panel 2: Tidal torque vs time ---
+ax2 = fig.add_subplot(gs[1, 0])
+style_ax(ax2, 'Normalized Tidal Torque vs Time')
+
+ax2.plot(df.time_Myr, np.abs(df.torque_norm), color=RED, linewidth=1.8)
+ax2.axvline(t_lock / (1e6*365.25*86400), color=AMBER, linewidth=1.2, linestyle=':')
+ax2.set_xlabel('Time (Myr)', color='#aabbcc', fontsize=10)
+ax2.set_ylabel('|τ| / |τ₀|', color='#aabbcc', fontsize=10)
+ax2.set_yscale('log')
+ax2.set_xlim(0, t_myr[-1])
+
+# --- Panel 3: log (ω - n) vs time (should be linear → proves exponential decay) ---
+ax3 = fig.add_subplot(gs[1, 1])
+style_ax(ax3, 'ln|ω − n| vs Time  (linearity confirms exp. decay)')
+
+valid = df.delta_omega_norm > 1e-10
+ax3.plot(df.time_Myr[valid], np.log(df.delta_omega_norm[valid]),
+         color=AMBER, linewidth=1.8, label='ln|Δω/Δω₀|')
+ax3.axvline(t_lock / (1e6*365.25*86400), color=GREEN, linewidth=1.2, linestyle=':',
+            label=f'Lock ≈ {t_lock/1e6/365.25/86400:.0f} Myr')
+ax3.set_xlabel('Time (Myr)', color='#aabbcc', fontsize=10)
+ax3.set_ylabel('ln(Δω / Δω₀)', color='#aabbcc', fontsize=10)
+ax3.legend(facecolor='#0f1a28', edgecolor='#334', labelcolor='white', fontsize=9)
+ax3.set_xlim(0, t_myr[-1])
+
+fig.suptitle('🌕  Tidal Locking Simulation — Satellite Spin Evolution Under Tidal Torque',
+             color='white', fontsize=14, fontweight='bold', y=1.01)
+
+plt.savefig('/home/claude/moderate1_tidal_locking.png', dpi=160, bbox_inches='tight',
+            facecolor=DARK)
+print("\nSaved: moderate1_tidal_locking.png")
+print(f"\n✅ KEY RESULT: Satellite reaches tidal lock in ≈ {t_lock/1e6/365.25/86400:.0f} Myr")

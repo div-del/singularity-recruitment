@@ -1,0 +1,96 @@
+"""
+Easy Q1: Plot Sun's orbit around the Milky Way using galpy
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from galpy.orbit import Orbit
+from galpy.potential import MWPotential2014
+from astropy import units as u
+
+# --- Initialize the Sun's orbit ---
+# The Sun's position: R=8 kpc from galactic center, z=0.02 kpc above plane
+# Velocity: circular velocity ~220 km/s, slight vertical motion
+sun = Orbit(vxvv=[1., 0., 1., 0., 0.1, 0.], ro=8., vo=220.)
+
+# Integrate for ~3 Gyr (a few full orbits, one period ~230 Myr)
+times = np.linspace(0, 3.0, 3000) * u.Gyr
+
+sun.integrate(times, MWPotential2014)
+
+# Extract orbit in R-z plane and x-y plane
+R   = sun.R(times)   # cylindrical radius in kpc
+z   = sun.z(times)   # height above plane in kpc
+phi = sun.phi(times) # azimuthal angle in radians
+
+x = R * np.cos(phi)
+y = R * np.sin(phi)
+
+# --- Plotting ---
+fig, axes = plt.subplots(1, 2, figsize=(14, 6), facecolor='#0a0a1a')
+
+for ax in axes:
+    ax.set_facecolor('#0a0a1a')
+    for spine in ax.spines.values():
+        spine.set_edgecolor('#333355')
+
+# === Left panel: X-Y (face-on galactic plane) ===
+ax1 = axes[0]
+
+# Galactic center marker
+ax1.scatter(0, 0, s=300, c='#FFD700', marker='*', zorder=5, label='Galactic Center')
+
+# Color orbit by time
+sc = ax1.scatter(x, y, c=np.linspace(0, 3, len(x)), cmap='plasma',
+                 s=0.8, alpha=0.9, zorder=3)
+
+# Sun's current position
+ax1.scatter(x[0], y[0], s=150, c='#FFF176', marker='o', zorder=6,
+            edgecolors='white', linewidths=1.2, label="Sun's Start")
+
+# Galactic disk rough boundary
+circle_outer = plt.Circle((0, 0), 16, fill=False, color='#334', linewidth=1, linestyle='--', alpha=0.5)
+circle_inner = plt.Circle((0, 0), 4,  fill=False, color='#334', linewidth=1, linestyle='--', alpha=0.5)
+ax1.add_patch(circle_outer)
+ax1.add_patch(circle_inner)
+
+ax1.set_xlabel('X (kpc)', color='#aaaacc', fontsize=11)
+ax1.set_ylabel('Y (kpc)', color='#aaaacc', fontsize=11)
+ax1.set_title("Face-on View\n(Galactic Plane)", color='white', fontsize=13, pad=12)
+ax1.tick_params(colors='#aaaacc')
+ax1.set_aspect('equal')
+ax1.set_xlim(-18, 18)
+ax1.set_ylim(-18, 18)
+ax1.legend(facecolor='#1a1a2e', edgecolor='#444466', labelcolor='white', fontsize=9)
+
+cbar = plt.colorbar(sc, ax=ax1, pad=0.02)
+cbar.set_label('Time (Gyr)', color='white', fontsize=9)
+cbar.ax.yaxis.set_tick_params(color='white')
+plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white', fontsize=8)
+
+# === Right panel: R-z (edge-on, cylindrical) ===
+ax2 = axes[1]
+sc2 = ax2.scatter(R, z, c=np.linspace(0, 3, len(R)), cmap='cool',
+                  s=0.8, alpha=0.9)
+ax2.scatter(R[0], z[0], s=150, c='#FFF176', marker='o', zorder=6,
+            edgecolors='white', linewidths=1.2, label="Sun's Start")
+
+ax2.set_xlabel('R — Galactocentric Radius (kpc)', color='#aaaacc', fontsize=11)
+ax2.set_ylabel('z — Height above Plane (kpc)', color='#aaaacc', fontsize=11)
+ax2.set_title("Edge-on View\n(R–z Plane)", color='white', fontsize=13, pad=12)
+ax2.tick_params(colors='#aaaacc')
+ax2.axhline(0, color='#334466', linewidth=1, linestyle='--', alpha=0.7, label='Galactic Plane')
+ax2.legend(facecolor='#1a1a2e', edgecolor='#444466', labelcolor='white', fontsize=9)
+
+cbar2 = plt.colorbar(sc2, ax=ax2, pad=0.02)
+cbar2.set_label('Time (Gyr)', color='white', fontsize=9)
+cbar2.ax.yaxis.set_tick_params(color='white')
+plt.setp(cbar2.ax.yaxis.get_ticklabels(), color='white', fontsize=8)
+
+fig.suptitle("☀️  Sun's Orbit Around the Milky Way  (MWPotential2014)",
+             color='white', fontsize=15, fontweight='bold', y=1.01)
+
+plt.tight_layout()
+plt.savefig('/home/claude/easy_galactic_orbit.png', dpi=160, bbox_inches='tight',
+            facecolor='#0a0a1a')
+print("Saved: easy_galactic_orbit.png")

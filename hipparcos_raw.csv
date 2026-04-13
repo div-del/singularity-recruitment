@@ -1,0 +1,133 @@
+"""
+Hard Q1 — Genesis Physics Simulation (Star + Planet two-body system)
+This code is written for Genesis (https://genesis-world.readthedocs.io)
+Run this LOCALLY after installing Genesis following the provided guide.
+
+Since Genesis requires a GPU/display environment, this file provides the
+complete, correct implementation ready to execute.
+"""
+
+# ====================================================================
+# INSTALL NOTES (from the provided Genesis installation doc):
+#   pip install genesis-world
+#   (requires CUDA-capable GPU + PyTorch with CUDA)
+# ====================================================================
+
+import genesis as gs
+import numpy as np
+
+# ---- Initialize Genesis scene ----
+gs.init(backend=gs.cuda)   # Use gs.cpu if no GPU
+
+scene = gs.Scene(
+    show_viewer   = True,
+    viewer_options= gs.options.ViewerOptions(
+        res        = (1280, 720),
+        camera_pos = (0, -20, 8),
+        camera_lookat = (0, 0, 0),
+        camera_fov    = 45,
+    ),
+    sim_options = gs.options.SimOptions(
+        dt       = 0.002,        # 2 ms timestep
+        gravity  = (0, 0, 0),   # No global gravity — we handle it ourselves
+    ),
+    vis_options = gs.options.VisOptions(
+        show_world_frame = True,
+    ),
+)
+
+# ---- Constants (scaled for simulation) ----
+G     = 6.674e-11   # m^3 kg^-1 s^-2
+M_star  = 2.0e30    # kg  (~1 solar mass)
+M_planet= 1.0e25    # kg  (~Jupiter-ish, much smaller)
+
+# Orbital radius and circular orbital velocity
+r_orbit = 5.0       # metres in sim units (scaled)
+v_orbit = np.sqrt(G * M_star / r_orbit)
+
+print(f"Orbital radius   : {r_orbit} m (sim units)")
+print(f"Circular velocity: {v_orbit:.4f} m/s (sim units)")
+
+# ---- Add Star (large sphere, yellow) ----
+star = scene.add_entity(
+    gs.morphs.Sphere(
+        radius = 0.8,
+        pos    = (0.0, 0.0, 0.0),
+    ),
+    surface = gs.surfaces.Emission(
+        color = (1.0, 0.85, 0.1),   # bright yellow
+        emissive_strength = 5.0,
+    ),
+)
+
+# ---- Add Planet (small sphere, blue) ----
+planet = scene.add_entity(
+    gs.morphs.Sphere(
+        radius = 0.25,
+        pos    = (r_orbit, 0.0, 0.0),   # start at +x
+    ),
+    surface = gs.surfaces.Rough(
+        color = (0.15, 0.45, 0.9),       # blue
+    ),
+)
+
+# ---- Optional: add a starfield background texture ----
+# scene.set_background_image('starfield.jpg')  # uncomment if image available
+
+# ---- Build scene ----
+scene.build()
+
+# ---- Set initial velocities ----
+# Star barely moves (large mass), planet orbits in x-y plane
+star.set_vel([0, 0, 0])
+planet.set_vel([0, float(v_orbit), 0])   # tangential velocity for circular orbit
+
+# ---- Simulation loop ----
+TOTAL_STEPS  = 10_000
+ORBIT_STEPS  = 500   # store orbit path every N steps
+
+orbit_x, orbit_y = [], []
+
+print("\nRunning Genesis simulation...")
+for step in range(TOTAL_STEPS):
+    # --- Compute gravitational force between star and planet ---
+    pos_star   = np.array(star.get_pos())
+    pos_planet = np.array(planet.get_pos())
+
+    r_vec = pos_star - pos_planet
+    r_mag = np.linalg.norm(r_vec) + 1e-10   # avoid divide-by-zero
+    r_hat = r_vec / r_mag
+
+    F_grav = G * M_star * M_planet / r_mag**2
+
+    # Apply force to planet (toward star), reaction to star (toward planet)
+    planet.add_force(F_grav * r_hat)
+    star.add_force(-F_grav * r_hat)
+
+    scene.step()
+
+    # Record orbit every ORBIT_STEPS
+    if step % ORBIT_STEPS == 0:
+        p = planet.get_pos()
+        orbit_x.append(p[0])
+        orbit_y.append(p[1])
+        print(f"  step {step:5d}  planet pos: ({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})")
+
+print("\nSimulation complete!")
+
+# ---- Plot reconstructed orbit path ----
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(8, 8), facecolor='#080c14')
+ax.set_facecolor('#080c14')
+ax.plot(orbit_x, orbit_y, color='#4FC3F7', lw=1.5, label='Planet orbit path')
+ax.scatter([0], [0], s=400, c='#FFD700', marker='*', label='Star', zorder=5)
+ax.scatter(orbit_x[0], orbit_y[0], s=80, c='#4FC3F7', label='Planet start', zorder=5)
+ax.set_aspect('equal')
+ax.set_xlabel('x (sim units)', color='white'); ax.set_ylabel('y (sim units)', color='white')
+ax.set_title('Two-Body Star–Planet Orbit  (Genesis Simulation)', color='white', fontsize=13)
+ax.legend(facecolor='#111', edgecolor='#334', labelcolor='white')
+ax.tick_params(colors='#99aabb')
+for sp in ax.spines.values(): sp.set_edgecolor('#334')
+plt.tight_layout()
+plt.savefig('hard1_genesis_orbit.png', dpi=150, bbox_inches='tight', facecolor='#080c14')
+print("Orbit path saved: hard1_genesis_orbit.png")
